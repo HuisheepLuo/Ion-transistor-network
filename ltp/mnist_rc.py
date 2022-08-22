@@ -2,30 +2,36 @@ import os
 import sys
 sys.path.append(os.getcwd())
 
-from tft_numba_ltp import tft, tft_rc
+from tft_numba_ltp import tft, tft_rc, sigma
 import numpy as np
 import matplotlib.pyplot as plt
-from single_network import *
+from utils import *
 import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from time import time
 from timetools import timefn
 
 
 # RC system RNN based on LTP.
-
-
+# seed
+seed = 70
+# savefile path
+save_path = 'ltp\\result'
+# dataset path
 data_path = 'data'
+# network settings
+num_epochs = 1
+
+# noise standard deviation
+sigma = 0.15 # [0,0.5)
+#-----------------------------------------------------------#
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cpu = torch.device("cpu")
 # print(device)
-batch_size = 1
 
-torch.manual_seed(1)
-torch.cuda.manual_seed(1)
-random.seed(1)
-np.random.seed(1)
+torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
+np.random.seed(seed)
 
 # Define a transform
 transform = transforms.Compose([
@@ -38,6 +44,7 @@ mnist_train = datasets.MNIST(data_path, train=True, transform=transform)
 mnist_test = datasets.MNIST(data_path, train=False, transform=transform)
 
 # Create DataLoaders
+batch_size = 1
 train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True, num_workers=0)
 test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True, num_workers=0)
 
@@ -77,10 +84,8 @@ class network(torch.nn.Module):
 def train_loop(dataloader):
     """
     The model of the neural network will be trained here and update the weights.
-
     Args:
         dataloader(Dataloader class): Dataset loader from pytorch.
-
 
     Returns:
         train_loss
@@ -88,7 +93,6 @@ def train_loop(dataloader):
     size = len(dataloader.dataset)
     train_loss = 0.
     train_acc = 0.
-    t1 = time()
     acc_save = []
     for batch, (x,label) in enumerate(dataloader):
         '''
@@ -105,15 +109,11 @@ def train_loop(dataloader):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        t2 = time()
 
         if batch % (size // 20) == 0 and batch != 0:
             loss, current = loss.item(), batch * len(x)
             print(f"loss: {loss:>7f}; acc: {train_acc / current *100:.2f}%; [{current:>5d}/{size:>5d}]")
-            print(f"Cost time: {t2-t1:.2f}s")
             acc_save.append([train_acc/current, current])
-            t1 = time()
-    np.save('epoch1_device88_single.npy', np.array(acc_save))
     print(f"accuracy:  [{train_acc / size*100:.2f}%]")
     return train_loss
 
@@ -148,25 +148,22 @@ def test_loop(dataloader):
     return correct
 
 model = network().to(device)
-learning_rate = 1e-2   
+learning_rate = 2e-3   
 loss_fn = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
 
 if __name__ == '__main__':
-
-    ### train_loop
-
     train_loss_count = []
     test_accuracy = []
-    epoch = 0
+    epoch = num_epochs
     for t in range(epoch + 1):
         print(f'Epoch {t}')
         train_loss_count.append(train_loop(train_loader))
         test_accuracy.append(test_loop(test_loader))
     result = np.array([train_loss_count, test_accuracy])
-    torch.save(model.state_dict(), 'net_model.pth')
-    np.save('result.npy', result)
+    torch.save(model.state_dict(), save_path+'/epoch'+str(epoch)+'_net_model_'+str(sigma)+'.pth')
+    np.save(save_path+'/epoch'+str(epoch)+'_'+str(sigma)+'.npy', result)
     plt.figure()
     plt.plot(list(range(epoch + 1)), train_loss_count, label='Loss')
     plt.figure()

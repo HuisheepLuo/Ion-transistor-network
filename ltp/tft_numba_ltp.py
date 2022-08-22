@@ -1,10 +1,9 @@
 from numba.experimental import jitclass
-from numba import int32, int64, float64, njit, jit
-import matplotlib.pyplot as plt
+from numba import int32, float64
 from scipy.optimize import curve_fit
-
 import numpy as np
 
+sigma = 0
 dt = 0.02
 A = 2.54e-5
 B = -3.63e-6
@@ -57,6 +56,7 @@ class tft:
         ID[0] = self.VS[0] * G_array[0]
         spk_count = 0
         wav_count = 0
+        noise = 1 - np.random.rand(self.num+1,) * sigma
 
         for i in range(self.num):
             dt = self.dt
@@ -81,8 +81,8 @@ class tft:
                 G_array[i+1] = self.G_max
             elif G_array[i+1] < self.G_min:
                 G_array[i+1] = self.G_min
-            ID[i+1] = self.VS[i] * G_array[i+1]
-        self.G_array = G_array
+            ID[i+1] = self.VS[i] * G_array[i+1] * noise[i]
+        self.G_array = G_array * noise
         return ID
 
 
@@ -100,47 +100,3 @@ def tft_rc(VG_group, VS):
         count += 1
     return ID
 
-
-if __name__ == '__main__':
-    plt.rcParams['font.size'] = 14
-    plt.rcParams['font.sans-serif'] = ['Arial']
-    num = 400
-    wav = 10
-    VG = np.zeros((num,), dtype=np.float64)
-    for i in range(1, wav+1):
-        VG[i*20:i*20+10] = 1.
-    # VG = np.random.rand(num,)
-
-    VS = np.ones((num,), dtype=np.float64)
-    ## 1V
-    # I_high = np.array([1.2, 2.7299, 2.8094, 2.8349, 2.8425, 2.8495])
-    # I_low = np.array([1.2, 1.6856, 1.8138, 1.8794, 1.9316])
-
-    ## 2V
-    # I_high = np.array([1.2, 3.0744, 3.1668, 3.2008, 3.2220, 3.2415])
-    # I_low = np.array([1.2, 2.8553, 2.9690, 3.0338, 3.0725])
-    # A_high, B_high, tau_high = fitting_func(np.linspace(0, 5, 6), I_high)
-    # A_low, B_low, tau_low = fitting_func(np.linspace(0, 4, 5), I_low)
-    # plt.figure()
-    # plt.plot(func(np.linspace(0, 5, 6), A_high, B_high, tau_high))
-    # plt.plot(func(np.linspace(0, 4, 5), A_low, B_low, tau_low))
-
-    tft0 = tft(VG, VS, 0.02)
-
-    # plt.figure(figsize=(4.5,2))
-    f, ax = plt.subplots(2, 1, figsize=(4.5,2), sharex=True)
-
-    plt.xticks([])
-    ax[0].set_yticks([])
-    ax[1].set_yticks([])
-    ax[0].set_ylim(-0.1,1.2)
-
-    # plt.xlabel('Time')
-    # plt.ylabel('Conductance')
-    # ax[1].set_xlabel('Time')
-    # ax[0].set_ylabel('Gate Voltage')
-    # ax[1].set_ylabel('Conductance')
-    ax[0].plot(VG)
-    ax[1].plot(tft0.ID)
-    plt.savefig('ltp_2.png')
-    plt.show()

@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.special import softmax
-import random
 
 def cross_entropy(y_pred, y_label):
     assert y_pred.shape == y_label.shape
