@@ -1,32 +1,34 @@
 import snntorch as snn
-from snntorch import spikeplot as splt
 from snntorch import spikegen, surrogate
 import torch, torch.nn as nn
 import snntorch.functional as SF
-import torch.nn.functional as F
 import matplotlib.pyplot as plt
-from torch.nn.modules import loss
-from torch.nn.modules.activation import Softmax
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-import matplotlib.animation as animation
 import numpy as np
-
+import os
 
 # seed
-torch.manual_seed(42)
-torch.cuda.manual_seed(42)
-np.random.seed(42)
-
+seed = 2005056489
+# savefile path
+save_path = 'lif\\result'
+# dataset path
 data_path = 'data'
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# print(device)
+# network settings
 batch_size = 64
-
 num_epochs = 1
 num_steps = 200 # run for 25 time steps
 step = 0
+# noise standard deviation
+sigma = 0 # [0,0.5)
+#-----------------------------------------------------------#
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+cpu = torch.device('cpu')
+# print(device)
 
+torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
+np.random.seed(seed)
 
 # Define a transform
 transform = transforms.Compose([
@@ -39,8 +41,8 @@ mnist_train = datasets.MNIST(data_path, train=True, transform=transform)
 mnist_test = datasets.MNIST(data_path, train=False, transform=transform)
 
 # Create DataLoaders
-train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True, num_workers=2)
-test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True, num_workers=2)
+train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True) #, num_workers=2
 
 
 # Define Network
@@ -53,18 +55,13 @@ class Net(nn.Module):
         num_outputs = 10
         spike_grad = surrogate.fast_sigmoid()
 
-        # global decay rate for all leaky neurons in layer 1
         beta1 = 0.9
-        # independent decay rate for each leaky neuron in layer 2: [0, 1)
-        # beta2 = torch.rand((num_outputs), dtype = torch.float) #.to(device)
         beta2 = 0.8
 
         # Init layers
         self.fc1 = nn.Linear(num_inputs, num_hidden)
-        # self.lif1 = snn.Leaky(beta=beta1, spike_grad=spike_grad, learn_beta=True)
         self.lif1 = snn.Leaky(beta=beta1, spike_grad=spike_grad)
         self.fc2 = nn.Linear(num_hidden, num_outputs)
-        # self.lif2 = snn.Leaky(beta=beta2, spike_grad=spike_grad,learn_beta=True)
         self.lif2 = snn.Leaky(beta=beta2, spike_grad=spike_grad, output=True)
 
 
@@ -79,9 +76,10 @@ class Net(nn.Module):
         mem2_rec = []
 
         for step in range(num_steps):
-            cur1 = self.fc1(x[step].flatten(1))
+            # add noise terms
+            cur1 = self.fc1(x[step].flatten(1)) * (1 - torch.rand([self.fc1(x[step].flatten(1)).shape[0], self.fc1(x[step].flatten(1)).shape[1]]).to(device) * sigma)
             spk1, mem1 = self.lif1(cur1, mem1)
-            cur2 = self.fc2(spk1)
+            cur2 = self.fc2(spk1) * (1 - torch.rand([self.fc2(spk1).shape[0], self.fc2(spk1).shape[1]]).to(device) * sigma)
             spk2, mem2 = self.lif2(cur2, mem2)
 
             spk2_rec.append(spk2)
@@ -94,9 +92,7 @@ net = Net().to(device)
 
 # 
 optimizer = torch.optim.Adam(net.parameters(), lr=2e-4, betas=(0.9, 0.999))
-# loss_fn = SF.mse_count_loss(correct_rate=0.8, incorrect_rate=0.2)
 loss_fn = SF.ce_count_loss()
-# loss_fn = loss.CrossEntropyLoss()
 
 
 def train_loop(train_loader, net, num_steps):
@@ -128,8 +124,9 @@ def train_loop(train_loader, net, num_steps):
             print(f"Accuracy: {acc * 100:.2f}%\n")
 
         # uncomment for faster termination
-        # if i == 150:
-        #     break
+        if i == 150:
+            break
+    return loss_val.to(cpu).item()
 
     
 def test_accuracy(data_loader, net, num_steps):
@@ -160,42 +157,32 @@ def update(spike_data, *args):
 
     return im,
 
-def display_ani_spk():
-    for data, targets in iter(train_loader):
-        spike_data = spikegen.rate(data, num_steps=num_steps)
-        # spike_data = spikegen.latency(data, num_steps=num_steps, tau=5, threshold=0.01)
-
-        # animation generate
-        fig = plt.figure()
-        im = plt.imshow(spike_data[0][0].reshape((28,28)), cmap='gray', animated=True)
-        ann = animation.FuncAnimation(fig, update, interval=60, blit = True, cache_frame_data=False)
-        ann.save('mnist_spike_latency_code.gif')
-        plt.show()
-    return spike_data
 
 if __name__ == '__main__':
+    os.makedirs(save_path, exist_ok=True)
     loss_hist = []
     acc_hist = []
+    train_loss_list = []
+    test_acc_list = []
 
     # training loop
     for epoch in range(num_epochs):
-        train_loop(train_loader, net, num_steps)
+        train_loss = train_loop(train_loader, net, num_steps)
         test_acc = test_accuracy(test_loader, net, num_steps)
-
+        train_loss_list.append(train_loss)
+        test_acc_list.append(test_acc)
         print(f"Test Accuracy: {test_acc * 100:.2f}%\n")
 
-    torch.save(net.state_dict(), 'spk_net_model_batch_64_hidden_300.pth')
+
+    torch.save(net.state_dict(), save_path+'\\spk_net_model'+'_'+str(sigma)+'.pth')
     plt.rcParams['font.size'] = 14
     plt.rcParams['font.sans-serif'] = ['Arial']
-    result = np.array([loss_hist, acc_hist])
-    np.save('result_spk_steps_200_seed_42_batch_64_hidden_300.npy', result)
+    result = np.array([train_loss_list, test_acc_list])
+    np.save(save_path+'\\result'+'_'+str(sigma)+'.npy', result)
     fig = plt.figure(facecolor="w", figsize=(8, 4))
-    plt.plot(loss_hist)
-    plt.title("Loss Curves")
-    plt.legend("Train Loss")
-    plt.xlabel("Iteration")
-    plt.ylabel("Loss")
+    plt.plot(test_acc_list)
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
     plt.show()
-
 
 
