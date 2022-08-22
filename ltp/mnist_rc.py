@@ -154,6 +154,7 @@ optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
 
 if __name__ == '__main__':
+    os.makedirs(save_path, exist_ok=True)
     train_loss_count = []
     test_accuracy = []
     epoch = num_epochs
