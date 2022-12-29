@@ -10,7 +10,7 @@ The codes of the LIF mode is based on [SNNtorch]. <https://github.com/jeshraghia
 
 Developer: Yiyang Luo
 
-# Citing
+# Citation
 Multimode transistors and neural networks based on ion-dynamic capacitance. Nat Electron 5, 859–869 (2022). https://doi.org/10.1038/s41928-022-00876-x
 
 
